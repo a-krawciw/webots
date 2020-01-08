@@ -591,6 +591,8 @@ void WbRobot::prePhysicsStep(double ms) {
   WbSolid::prePhysicsStep(ms);
   if (mKinematicDifferentialWheels)
     mKinematicDifferentialWheels->applyKinematicMotion(ms);
+  if (mSupervisorUtilities)
+    mSupervisorUtilities->prePhysicsStep();
 }
 
 void WbRobot::postPhysicsStep() {

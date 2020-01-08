@@ -33,6 +33,11 @@ class WbTransform;
 class WbSolid;
 class WbWrenLabelOverlay;
 
+struct WrDynamicMesh;
+struct WrRenderable;
+struct WrMaterial;
+struct WrTransform;
+
 class WbSupervisorUtilities : public QObject {
   Q_OBJECT
 
@@ -45,6 +50,7 @@ public:
   void writeAnswer(QDataStream &stream);
   void writeConfigure(QDataStream &stream);
   void processImmediateMessages();
+  void prePhysicsStep();
   void postPhysicsStep();
   void reset();
 
@@ -114,6 +120,12 @@ private:
   QString createLabelUpdateString(const WbWrenLabelOverlay *labelOverlay) const;
 
   QList<int> mLabelIds;
+
+  WrDynamicMesh *mForceMesh;
+  WrRenderable *mForceRenderable;
+  WrMaterial *mForceMaterial;
+  WrTransform *mTransform;
+  int mForceMeshIndex;
 };
 
 #endif

@@ -59,6 +59,20 @@
 #include <QtCore/QFile>
 #include <cassert>
 
+#include <wren/dynamic_mesh.h>
+#include <wren/material.h>
+#include <wren/node.h>
+#include <wren/renderable.h>
+#include <wren/scene.h>
+#include <wren/transform.h>
+#include "WbWrenShaders.hpp"
+
+static void addVertex(WrDynamicMesh *mesh, int index, double x, double y, double z) {
+  const float vertex[3] = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
+  wr_dynamic_mesh_add_vertex(mesh, vertex);
+  wr_dynamic_mesh_add_index(mesh, index);
+}
+
 static const int MAX_LABELS = 100;
 
 struct WbFieldGetRequest {
@@ -238,6 +252,34 @@ WbSupervisorUtilities::WbSupervisorUtilities(WbRobot *robot) : mRobot(robot) {
   // otherwise, conflicts can occur in case of multiple controllers
   connect(this, &WbSupervisorUtilities::changeSimulationModeRequested, this, &WbSupervisorUtilities::changeSimulationMode,
           Qt::QueuedConnection);
+
+  WbWrenOpenGlContext::makeWrenCurrent();
+
+  mForceMeshIndex = 0;
+
+  mForceMesh = wr_dynamic_mesh_new(false, false, false);
+
+  mForceMaterial = wr_phong_material_new();
+  const float ForceColor[3] = {0.0f, 1.0f, 1.0f};
+  wr_phong_material_set_color(mForceMaterial, ForceColor);
+  wr_phong_material_set_transparency(mForceMaterial, 0.7f);
+  wr_material_set_default_program(mForceMaterial, WbWrenShaders::lineSetShader());
+
+  mForceRenderable = wr_renderable_new();
+  wr_renderable_set_cast_shadows(mForceRenderable, false);
+  wr_renderable_set_receive_shadows(mForceRenderable, false);
+  wr_renderable_set_mesh(mForceRenderable, WR_MESH(mForceMesh));
+  wr_renderable_set_material(mForceRenderable, mForceMaterial, NULL);
+  wr_renderable_set_drawing_mode(mForceRenderable, WR_RENDERABLE_DRAWING_MODE_LINES);
+  wr_renderable_set_drawing_order(mForceRenderable, WR_RENDERABLE_DRAWING_ORDER_AFTER_1);
+
+  mTransform = wr_transform_new();
+  wr_transform_attach_child(mTransform, WR_NODE(mForceRenderable));
+
+  WrTransform *root = wr_scene_get_root(wr_scene_get_instance());
+  wr_transform_attach_child(root, WR_NODE(mTransform));
+
+  WbWrenOpenGlContext::doneWren();
 }
 
 WbSupervisorUtilities::~WbSupervisorUtilities() {
@@ -245,6 +287,11 @@ WbSupervisorUtilities::~WbSupervisorUtilities() {
     WbWrenLabelOverlay::removeLabel(labelId);
 
   deleteControllerRequests();
+
+  wr_material_delete(mForceMaterial);
+  wr_dynamic_mesh_delete(mForceMesh);
+  wr_node_delete(WR_NODE(mForceRenderable));
+  wr_node_delete(WR_NODE(mTransform));
 }
 
 void WbSupervisorUtilities::deleteControllerRequests() {
@@ -334,6 +381,11 @@ void WbSupervisorUtilities::processImmediateMessages() {
   mFieldSetRequests.clear();
   WbTemplateManager::instance()->blockRegeneration(false);
   emit worldModified();
+}
+
+void WbSupervisorUtilities::prePhysicsStep() {
+  wr_dynamic_mesh_clear(mForceMesh);
+  mForceMeshIndex = 0;
 }
 
 void WbSupervisorUtilities::postPhysicsStep() {
@@ -797,10 +849,17 @@ void WbSupervisorUtilities::handleMessage(QDataStream &stream) {
         WbVector3 force(fx, fy, fz), offset(ox, oy, oz);
         if (relative == 1)
           force = solid->matrix().extracted3x3Matrix() * force;
-        offset = solid->matrix().extracted3x3Matrix() * offset;
+        WbVector3 relOffset = solid->matrix().extracted3x3Matrix() * offset;
+
+        WbMatrix4 solidMatrix = solid->matrix();
+        WbVector3 tOffset = solidMatrix * offset;
+
+        addVertex(mForceMesh, mForceMeshIndex++, tOffset.x() + force.x(), tOffset.y() + force.y(), tOffset.z() + force.z());
+        addVertex(mForceMesh, mForceMeshIndex++, tOffset.x(), tOffset.y(), tOffset.z());
+
         dBodyID body = solid->bodyMerger();
         if (body)
-          dBodyAddForceAtRelPos(body, force.x(), force.y(), force.z(), offset.x(), offset.y(), offset.z());
+          dBodyAddForceAtRelPos(body, force.x(), force.y(), force.z(), relOffset.x(), relOffset.y(), relOffset.z());
         else
           mRobot->warn(tr("wb_supervisor_node_add_force_with_offset() can't be used with a kinematic Solid"));
       } else
