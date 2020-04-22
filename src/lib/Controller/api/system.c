@@ -139,11 +139,12 @@ const char *wbu_system_webots_tmp_path() {
   const size_t l = strlen(tmp);
   const char *WEBOTS_PID = getenv("WEBOTS_PID");
   int webots_pid = 0;
+  char random_part[16];
   if (WEBOTS_PID && strlen(WEBOTS_PID) > 0)
     sscanf(WEBOTS_PID, "%d", &webots_pid);
-  const size_t path_buffer_size = l + 32;  // enough room to hold tmp + "/webots-XXXX...XXX" (pid_t maximum string length)
+  const size_t path_buffer_size = l + 64;
   char *path_buffer = malloc(path_buffer_size);
-  if (webots_pid == 0) {  // get the webots pid from the most recent "webots-XXX" folder
+  if (webots_pid == 0) {  // get the webots pid from the most recent "webots-<PID>-XXXXXX" folder
     DIR *dir;
     dir = opendir(tmp);
     if (dir) {
@@ -159,7 +160,7 @@ const char *wbu_system_webots_tmp_path() {
             continue;
           if (s.st_mtime < most_recent)
             continue;
-          sscanf(entry->d_name, "webots-%d", &webots_pid);
+          sscanf(entry->d_name, "webots-%d-%s", &webots_pid, &random_part);
           most_recent = s.st_mtime;
         }
       }
@@ -170,7 +171,7 @@ const char *wbu_system_webots_tmp_path() {
     free(path_buffer);
     path_buffer = NULL;
   } else
-    snprintf(path_buffer, path_buffer_size, "%s/webots-%d", tmp, webots_pid);
+    snprintf(path_buffer, path_buffer_size, "%s/webots-%d-%s", tmp, webots_pid, random_part);
   WEBOTS_TMP_PATH = path_buffer;
   return WEBOTS_TMP_PATH;
 }
